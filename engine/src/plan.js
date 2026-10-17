@@ -25,9 +25,10 @@ export function captionStyle(plan, th) {
     bg: c.bg || 'none', // none: حد حول الحروف · line: مربع ورا السطر · word: مربع ورا الكلمة اللي تنقال
     bgColor: c.bgColor || '#000000',
     bgOpacity: c.bgOpacity ?? 0.6,
+    // الكتابة بيضا دايم إلا لو صاحب المقطع اختار غير كذا من المحرّر. الكلمة اللي تنقال تبان بالحجم والوضوح، مو باللون
     color: c.color || '#FFFFFF',
-    activeColor: c.activeColor || th.acc,
-    hotColor: c.hotColor || th.acc,
+    activeColor: c.activeColor || '#FFFFFF',
+    hotColor: c.hotColor || '#FFFFFF',
     size: c.size ?? st.capSize,
     weight: c.weight ?? 700,
     y: c.y ?? null, // مكانها كنسبة من طول الشاشة. null = تحت الذقن تلقائي
@@ -55,6 +56,15 @@ function sceneSounds(sc) {
   if (Array.isArray(sc.sfx)) return sc.sfx.filter((x) => x && SFX[x.name] && Number.isFinite(x.at));
   // التلقائي: نفخة عند دخول الرسمة، وصوت خفيف مع كل عنصر له وقت
   const out = [{at: sc.s, name: 'whoosh'}];
+  // المشهد: طقّة مع كل شي يدخل، ونفخة مع كل شي يطير لغيره، وتكّة مع النبضة
+  if (sc.type === 'stage') {
+    for (const a of sc.actors || []) {
+      if (Number.isFinite(a?.at)) out.push({at: a.at, name: 'pop'});
+      if (Number.isFinite(a?.toAt)) out.push({at: a.toAt, name: 'whoosh'});
+      if (Number.isFinite(a?.pulseAt)) out.push({at: a.pulseAt, name: 'tick'});
+    }
+    return out;
+  }
   const each = sc.type === 'numbers' || sc.type === 'total' ? 'tick' : 'pop';
   for (const it of sc.items || []) if (Number.isFinite(it?.at)) out.push({at: it.at, name: each});
   if (sc.type === 'total' && sc.total != null && Number.isFinite(sc.totalAt)) out.push({at: sc.totalAt, name: 'pop'});
@@ -166,6 +176,7 @@ export function resolvePlan(plan, sentences, total = Infinity) {
     const n = idx + 1;
     // نبدأ ندوّر من بداية الرسمة (لو مكتوبة) أو من نهاية اللي قبلها، والعناصر تمشي بترتيب الكلام
     let cursor = Number.isFinite(sc.s) ? sc.s - 1.5 : prevEnd;
+    const floor = cursor;
     const hits = [];
     const visit = (obj) => {
       if (Array.isArray(obj)) return obj.forEach(visit);
@@ -178,7 +189,7 @@ export function resolvePlan(plan, sentences, total = Infinity) {
         const all = findPhrase(words, phrase);
         let hit = null;
         if (Number.isInteger(obj.nth) && key === 'word') hit = all[obj.nth - 1] || null;
-        else hit = all.find((h) => h.s >= cursor - 0.05) || all[all.length - 1] || null;
+        else hit = all.find((h) => h.s >= cursor - 0.05) || all.find((h) => h.s >= floor - 0.05) || all[all.length - 1] || null;
         if (!hit) {
           issues.push(`الرسمة ${n}: الكلمة «${phrase}» ما انقالت بالكلام. انسخها بحروفها من الكلام المصحّح`);
           continue;
@@ -238,7 +249,7 @@ function sceneTimes(sc) {
 
 // ——— فحص الهدوء ———
 // المقطع ما يصدّع: الرسمات قليلة، بينها نفَس، ووجه المتحدث له أغلب الوقت.
-export const LIMITS = {min: 2, maxFull: 6, maxSplit: 9, gap: 3, firstAt: 2, per30: 4, fullPer30: 2, cover: 0.5};
+export const LIMITS = {min: 2, maxFull: 6, maxSplit: 9, gap: 2, firstAt: 1.5, per30: 5, fullPer30: 3, cover: 0.7};
 
 export function validatePlan(plan, total) {
   const problems = [...(plan?._issues || [])];
@@ -253,7 +264,7 @@ export function validatePlan(plan, total) {
     }
     const len = sc.e - sc.s;
     const split = layoutOf(sc) === 'split';
-    if (!['flow', 'numbers', 'list', 'word', 'total', 'compare', 'stat', 'photo', 'custom'].includes(sc.type)) problems.push(`الرسمة ${sc.n}: نوع مو معروف "${sc.type}"`);
+    if (!['stage', 'flow', 'numbers', 'list', 'word', 'total', 'compare', 'stat', 'photo', 'custom'].includes(sc.type)) problems.push(`الرسمة ${sc.n}: نوع مو معروف "${sc.type}"`);
     if (sc.type === 'photo' && !sc.file) problems.push(`الرسمة ${sc.n}: نوعها photo وناقصها file (مثل images/name.jpg)`);
     if (sc.type === 'custom' && !sc.name) problems.push(`الرسمة ${sc.n}: نوعها custom وناقصها name`);
     if (sc.layout && !['full', 'split'].includes(sc.layout)) problems.push(`الرسمة ${sc.n}: layout يا full يا split`);
@@ -286,6 +297,12 @@ export function advisePlan(plan, total) {
   const n = (plan?.scenes || []).length;
   const want = Math.max(1, Math.round((total / 30) * 3));
   if (total >= 12 && n < want) notes.push(`الرسمات ${n} والمقطع ${Math.round(total)} ث: المتوقع ${want} على الأقل. ارجع للكلام ودوّر أي رقم أو تكلفة أو مقارنة أو تعداد ما انرسم.`);
+  // التنويع: الرسمات اللي تشرح بأشياء مرسومة (stage والخاصة والصور) لازم تكون الأغلب، والقوالب النصية ما تتوالى
+  const scenes = (plan?.scenes || []).slice().sort((x, y) => (x.s ?? 0) - (y.s ?? 0));
+  const drawn = scenes.filter((sc) => ['stage', 'custom', 'photo'].includes(sc.type)).length;
+  if (n >= 2 && drawn / n < 2 / 3) notes.push(`المشاهد المرسومة ${drawn} من ${n}: خلّ ثلثين الرسمات على الأقل stage. القوالب النصية للضرورة بس`);
+  const TEXTY = ['list', 'flow', 'numbers', 'word', 'total', 'compare', 'stat'];
+  for (let i = 1; i < scenes.length; i++) if (TEXTY.includes(scenes[i].type) && TEXTY.includes(scenes[i - 1].type)) notes.push(`الرسمة ${i} و${i + 1} قالبين نصيين ورا بعض. حوّل وحدة منهم مشهد stage`);
   return notes;
 }
 

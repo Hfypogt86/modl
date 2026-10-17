@@ -3,7 +3,8 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Player} from '@remotion/player';
 import {Reel} from '../src/Reel.jsx';
-import {PALETTES, resolveTheme} from '../src/theme.js';
+import {PALETTES, ALIASES, resolveTheme} from '../src/theme.js';
+import {OBJECTS} from '../src/objects.jsx';
 import {ICONS, ARTS} from '../src/kit.jsx';
 import {STYLES, SFX, H, layoutOf, captionStyle, resolveSounds, validatePlan, applyFix, retimeProject, keepTotal, toSource, resolvePlan} from '../src/plan.js';
 
@@ -32,9 +33,9 @@ const shift = (v, k, d) => {
   return v;
 };
 
-const KEY_LABELS = {text: 'النص', at: 'الوقت', note: 'تعليق', noteAt: 'وقت التعليق', title: 'العنوان', label: 'العنوان', labelAt: 'وقت العنوان', sub: 'سطر تحتي', subAt: 'وقت السطر', items: 'العناصر', hot: 'ملوّن', before: 'قبل', after: 'بعد', tag: 'البطاقة', steps: 'الخطوات', n: 'الرقم', icon: 'أيقونة', art: 'رسمة موشن', amount: 'المبلغ', total: 'المجموع', totalAt: 'وقت المجموع', totalLabel: 'اسم المجموع', right: 'الجهة اليمين', left: 'الجهة اليسار', mark: 'العلامة', value: 'الرقم', unit: 'الوحدة', file: 'ملف الصورة', fit: 'شكل الصورة', pos: 'مكان القص', titleAt: 'وقت العنوان', word: 'يطلع مع كلمة', totalWord: 'المجموع مع كلمة', noteWord: 'التعليق مع كلمة', labelWord: 'العنوان مع كلمة', titleWord: 'العنوان مع كلمة', nth: 'رقم تكرار الكلمة'};
+const KEY_LABELS = {text: 'النص', at: 'الوقت', note: 'تعليق', noteAt: 'وقت التعليق', title: 'العنوان', label: 'العنوان', labelAt: 'وقت العنوان', sub: 'سطر تحتي', subAt: 'وقت السطر', items: 'العناصر', hot: 'ملوّن', before: 'قبل', after: 'بعد', tag: 'البطاقة', steps: 'الخطوات', n: 'الرقم', icon: 'أيقونة', art: 'رسمة موشن', amount: 'المبلغ', total: 'المجموع', totalAt: 'وقت المجموع', totalLabel: 'اسم المجموع', right: 'الجهة اليمين', left: 'الجهة اليسار', mark: 'العلامة', value: 'الرقم', unit: 'الوحدة', file: 'ملف الصورة', fit: 'شكل الصورة', pos: 'مكان القص', titleAt: 'وقت العنوان', word: 'يطلع مع كلمة', actors: 'الأشياء', obj: 'الرسمة', label: 'الاسم', id: 'المعرّف', x: 'المكان أفقي', y: 'المكان عمودي', size: 'الحجم', enter: 'يدخل من', to: 'يطير إلى', toWord: 'يطير مع كلمة', toAt: 'وقت الطيران', link: 'يرتبط بـ', pulseWord: 'ينبض مع كلمة', pulseAt: 'وقت النبضة', outWord: 'يطلع مع كلمة', outAt: 'وقت الخروج', camera: 'الكاميرا', zoom: 'القربة', totalWord: 'المجموع مع كلمة', noteWord: 'التعليق مع كلمة', labelWord: 'العنوان مع كلمة', titleWord: 'العنوان مع كلمة', nth: 'رقم تكرار الكلمة'};
 const ART_LABELS = {shop: 'محل', building: 'عمارة', coins: 'عملات تتكدّس', coin: 'عملة', bills: 'ورق نقد', doc: 'ورقة رسمية', person: 'شخص', calendar: 'روزنامة'};
-const TYPE_LABELS = {list: 'قائمة', numbers: 'أرقام', flow: 'تحويل', word: 'عبارة', total: 'تكاليف', compare: 'مقارنة', stat: 'رقم كبير', photo: 'صورة', custom: 'رسمة خاصة'};
+const TYPE_LABELS = {stage: 'مشهد', list: 'قائمة', numbers: 'أرقام', flow: 'تحويل', word: 'عبارة', total: 'تكاليف', compare: 'مقارنة', stat: 'رقم كبير', photo: 'صورة', custom: 'رسمة خاصة'};
 const sceneTitle = (sc) => (sc.type === 'custom' ? sc.name : TYPE_LABELS[sc.type]) + (sc.title || sc.text || sc.label || sc.value ? ' · ' + (sc.title || sc.text || sc.label || sc.value) : '');
 
 const newScene = (type, t) => {
@@ -154,8 +155,8 @@ function Fields({value, onChange, skip = []}) {
         if (anchor && anchor in next) delete next[anchor];
         onChange(next);
       };
-      if (k === 'icon' || k === 'art' || k === 'mark') {
-        const opts = k === 'icon' ? Object.keys(ICONS).map((x) => [x, x]) : k === 'art' ? Object.entries(ART_LABELS) : [['check', 'صح'], ['cross', 'خطأ']];
+      if (k === 'icon' || k === 'art' || k === 'mark' || k === 'obj') {
+        const opts = k === 'obj' ? Object.keys(OBJECTS).map((x) => [x, x]) : k === 'icon' ? Object.keys(ICONS).map((x) => [x, x]) : k === 'art' ? Object.entries(ART_LABELS) : [['check', 'صح'], ['cross', 'خطأ']];
         return (
           <Row key={k} label={label}>
             <select value={v || ''} onChange={(e) => put(e.target.value)}>
@@ -463,10 +464,10 @@ function CaptionsPanel({plan, setPlan}) {
           <Color value={c.color} fallback="#ffffff" onChange={(v) => put({color: v}, 'c-col')} />
         </Row>
         <Row label="الكلمة اللي تنقال">
-          <Color value={c.activeColor} fallback={th.acc} onChange={(v) => put({activeColor: v}, 'c-act')} />
+          <Color value={c.activeColor} fallback="#FFFFFF" onChange={(v) => put({activeColor: v}, 'c-act')} />
         </Row>
         <Row label="الكلمات البارزة">
-          <Color value={c.hotColor} fallback={th.acc} onChange={(v) => put({hotColor: v}, 'c-hot')} />
+          <Color value={c.hotColor} fallback="#FFFFFF" onChange={(v) => put({hotColor: v}, 'c-hot')} />
         </Row>
       </div>
       <div className="group">
@@ -529,16 +530,16 @@ function LookPanel({plan, setPlan}) {
         <h4>الباقة</h4>
         <div className="swatches">
           {Object.entries(PALETTES).map(([k, p]) => (
-            <div key={k} className={'swatch' + ((plan.palette || 'mono') === k ? ' on' : '')} style={{background: p.bg, color: p.ink}} onClick={() => setPlan((x) => ({...x, palette: k}))}>
+            <div key={k} className={'swatch' + ((ALIASES[plan.palette] || plan.palette || 'midnight') === k ? ' on' : '')} style={{background: p.bg, color: p.ink}} onClick={() => setPlan((x) => ({...x, palette: k}))}>
               {p.name}
-              <i style={{background: p.acc}} />
+              <i style={{background: `linear-gradient(135deg, ${p.acc}, ${p.acc2 || p.acc})`}} />
             </div>
           ))}
         </div>
       </div>
       <div className="group">
         <h4>ألوان خاصة (تغلب الباقة)</h4>
-        {[['bg', 'الخلفية'], ['ink', 'النص'], ['acc', 'البارز'], ['onAcc', 'النص فوق البارز'], ['soft', 'الثانوي']].map(([k, l]) => (
+        {[['bg', 'الخلفية'], ['ink', 'النص'], ['acc', 'البارز'], ['acc2', 'البارز الثاني'], ['onAcc', 'النص فوق البارز'], ['soft', 'الثانوي']].map(([k, l]) => (
           <Row key={k} label={l}>
             <Color value={colors[k]} fallback={th[k]} onChange={(v) => putColor(k, v)} />
           </Row>
@@ -827,15 +828,15 @@ function Timeline({doc, set, sentences, total, t, seek, sel, setSel, pps}) {
 }
 
 // يحسب s و e للرسمات اللي ناقصتها من الكلام، ويخلي باقي الخطة زي ما هي
-function materialize(plan, sentences) {
-  const r = resolvePlan(plan || {}, sentences);
+function materialize(plan, sentences, total) {
+  const r = resolvePlan(plan || {}, sentences, total);
   return {...(plan || {}), scenes: (plan?.scenes || []).map((sc, i) => ({...sc, s: sc.s ?? r.scenes[i].s, e: sc.e ?? r.scenes[i].e}))};
 }
 
 // ——— التطبيق ———
 function Editor({project}) {
   // الرسمات المربوطة بالكلام تاخذ s و e من أول ما تنفتح، عشان التايم لاين يرسمها
-  const {doc, set, undo, redo, canUndo, canRedo} = useHistory({plan: materialize(project.plan, applyFix(project.raw.sentences, project.fix)), fix: project.fix, cut: project.cut, raw: project.raw});
+  const {doc, set, undo, redo, canUndo, canRedo} = useHistory({plan: materialize(project.plan, applyFix(project.raw.sentences, project.fix), keepTotal(project.cut.keep)), fix: project.fix, cut: project.cut, raw: project.raw});
   const {plan, fix, cut, raw} = doc;
   const total = keepTotal(cut.keep);
   const frames = Math.max(1, Math.round(total * FPS));

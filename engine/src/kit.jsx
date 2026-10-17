@@ -5,6 +5,8 @@ import {rgba} from './theme.js';
 
 export {rgba};
 export {float, drop, part, Art, ARTS} from './art.jsx';
+export {Obj, OBJECTS} from './objects.jsx';
+export {mix} from './theme.js';
 export const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 export const lerp = (a, b, k) => a + (b - a) * k;
 export const ease = (k) => 1 - Math.pow(1 - clamp(k), 3);

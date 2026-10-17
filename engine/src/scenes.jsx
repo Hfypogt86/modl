@@ -2,6 +2,7 @@ import React from 'react';
 import {rgba, clamp, ease, prog, spring, enter, pop, slide, focusOf, count, float, splitNumber, Card, Chip, glass, Icon, Art, Photo} from './kit.jsx';
 import {scenes as CUSTOM} from './custom.generated.jsx';
 import {SPLIT_H, layoutOf} from './plan.js';
+import {Stage} from './stage.jsx';
 
 // مساحة الرسمة المالية للشاشة: نص الشاشة تقريباً. الفيديو يتغبّش وراها، فالمساحة كلها لها
 export const CANVAS = {x: 70, y: 300, w: 940, h: 960};
@@ -404,7 +405,7 @@ function Backdrop({t, th, W, H}) {
   );
 }
 
-const TYPES = {flow: Flow, numbers: Numbers, list: List, word: Word, total: Total, compare: Compare, stat: Stat, photo: Picture};
+const TYPES = {stage: Stage, flow: Flow, numbers: Numbers, list: List, word: Word, total: Total, compare: Compare, stat: Stat, photo: Picture};
 
 // دخول الرسمة كاملة: تطلع من تحت بزنبرك وتوضح من ضباب. وخروجها: تصغر شعرة وتتلاشى بضباب
 function panelMotion(scene, t) {
