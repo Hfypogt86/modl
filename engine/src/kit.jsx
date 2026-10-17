@@ -1,5 +1,6 @@
 // أدوات الرسم المشتركة بين القوالب والرسمات المكتوبة لكل تسجيل
 import React from 'react';
+import {Img, staticFile} from 'remotion';
 import {rgba} from './theme.js';
 
 export {rgba};
@@ -19,20 +20,45 @@ export const backOut = (k) => {
 };
 // رقم يطلع من صفر لواحد، بدايته at ومدّته dur
 export const prog = (t, at, dur = 0.3) => ease((t - at) / dur);
-// ظهور ناعم: يبان ويرتفع شوي ويكبر لحجمه ثم يثبت
-export const enter = (t, at, dur = 0.28) => {
-  const k = prog(t, at, dur);
-  return {opacity: k, transform: `translateY(${(1 - k) * 18}px) scale(${0.96 + 0.04 * k})`};
+// زنبرك: يوصل ويتعدّى شعرة ويرجع ويثبت، مثل حركة الأشياء الحقيقية. يرجّع من 0 لـ1 (ويتعدّاه شوي)
+export const spring = (t, at, {freq = 1.7, damp = 0.62} = {}) => {
+  const x = t - at;
+  if (x <= 0) return 0;
+  const w = 2 * Math.PI * freq;
+  const wd = w * Math.sqrt(1 - damp * damp);
+  return 1 - Math.exp(-damp * w * x) * (Math.cos(wd * x) + ((damp * w) / wd) * Math.sin(wd * x));
 };
-// ظهور بنبضة: يكبر من صغير ويتعدّى حجمه شعرة ثم يستقر. للعنصر اللي عليه العين
-export const pop = (t, at, dur = 0.42) => {
-  const k = (t - at) / dur;
-  return {opacity: clamp(k * 4), transform: `scale(${k <= 0 ? 0.6 : 0.6 + 0.4 * backOut(k)})`};
+// تغبيش الدخول: العنصر يطلع من ضباب ويوضح، وهذا اللي يعطي الحركة إحساس العصرية
+const blurIn = (t, at, px = 10, dur = 0.32) => {
+  const b = (1 - ease((t - at) / dur)) * px;
+  return b > 0.15 ? `blur(${b.toFixed(2)}px)` : 'none';
+};
+// ظهور ناعم: يرتفع من تحت ويوضح من ضباب
+export const enter = (t, at, dur = 0.28) => {
+  const k = spring(t, at, {freq: 1.5, damp: 0.75});
+  return {opacity: clamp(((t - at) / dur) * 1.4), transform: `translateY(${(1 - k) * 34}px)`, filter: blurIn(t, at, 8, dur + 0.05)};
+};
+// ظهور بنبضة: يكبر بزنبرك ويوضح. للعنصر اللي عليه العين
+export const pop = (t, at) => {
+  const k = spring(t, at, {freq: 1.6, damp: 0.55});
+  return {opacity: clamp((t - at) / 0.16), transform: `scale(${(0.7 + 0.3 * k).toFixed(4)})`, filter: blurIn(t, at, 12, 0.3)};
 };
 // دخول من الجنب: dx موجب يدخل من اليمين
-export const slide = (t, at, dx = 70, dur = 0.38) => ({opacity: clamp(((t - at) / dur) * 3), transform: `translateX(${(1 - prog(t, at, dur)) * dx}px)`});
-// عدّاد: رقم صحيح يمشي من from إلى to
-export const count = (t, at, to, dur = 0.55, from = 0) => Math.round(lerp(from, to, prog(t, at, dur)));
+export const slide = (t, at, dx = 70) => {
+  const k = spring(t, at, {freq: 1.5, damp: 0.7});
+  return {opacity: clamp((t - at) / 0.18), transform: `translateX(${((1 - k) * dx).toFixed(2)}px)`, filter: blurIn(t, at, 10, 0.3)};
+};
+// التركيز: أي عنصر هو اللي ينقال الحين. يرجّع لكل عنصر من 0 (فات أو ما جا) لـ1 (هو اللي ينقال)
+// ats: أوقات العناصر بالترتيب. العنصر يبقى مركّز لين يجي اللي بعده
+export const focusOf = (t, ats, i) => {
+  const at = ats[i];
+  if (!Number.isFinite(at) || t < at) return 0;
+  const next = ats.slice(i + 1).find(Number.isFinite);
+  const on = ease((t - at) / 0.25);
+  return next == null || t < next ? on : 1 - ease((t - next) / 0.3);
+};
+// عدّاد: رقم صحيح يمشي من from إلى to، يسرع بالبداية ويهدأ وهو يوصل
+export const count = (t, at, to, dur = 0.8, from = 0) => Math.round(lerp(from, to, 1 - Math.pow(1 - clamp((t - at) / dur), 4)));
 // «80 ألف» أو «25%» ← {pre, n, post}. يرجّع null إذا ما فيه رقم صحيح واحد
 export const splitNumber = (text) => {
   const m = /^(\D*?)(\d+)(\D*)$/.exec(String(text ?? '').trim());
@@ -57,15 +83,29 @@ export const Box = ({children, hot, th, style}) => (
   </div>
 );
 
-// بطاقة لها عمق: تدرّج خفيف وظل. الملوّنة تتوهّج بلون الباقة
-export const Card = ({children, hot, th, style}) => (
+// خلفية زجاجية: شفافة بتدرّج، حافة رفيعة، لمعة بأعلاها وظل عميق. glow من 0 لـ1 يوهّجها بلون الباقة
+export const glass = (th, {hot = false, glow = 0, radius = 36} = {}) => ({
+  background: hot
+    ? `linear-gradient(150deg, ${th.acc}, ${rgba(th.acc, 0.78)})`
+    : `linear-gradient(160deg, ${rgba(th.ink, 0.13 + 0.06 * glow)}, ${rgba(th.ink, 0.035)} 70%), ${rgba(th.acc, 0.1 * glow)}`,
+  border: `1.5px solid ${hot ? rgba(th.onAcc, 0.25) : glow > 0.01 ? rgba(th.acc, 0.25 + 0.6 * glow) : rgba(th.ink, 0.16)}`,
+  borderRadius: radius,
+  backdropFilter: 'blur(22px)',
+  boxShadow: [
+    `inset 0 1.5px 0 ${rgba('#FFFFFF', hot ? 0.35 : 0.14)}`,
+    '0 24px 60px rgba(0,0,0,0.38)',
+    hot || glow > 0.01 ? `0 0 ${Math.round(70 * (hot ? 1 : glow))}px ${rgba(th.acc, hot ? 0.45 : 0.35 * glow)}` : null,
+  ]
+    .filter(Boolean)
+    .join(','),
+});
+
+// بطاقة زجاجية. الملوّنة (hot) تتعبّى بلون الباقة وتتوهّج، و glow يوهّجها وقت نطقها
+export const Card = ({children, hot, glow = 0, th, style}) => (
   <div
     style={{
-      background: hot ? th.acc : `linear-gradient(160deg, ${rgba(th.ink, 0.17)}, ${rgba(th.ink, 0.05)})`,
+      ...glass(th, {hot, glow}),
       color: hot ? th.onAcc : th.ink,
-      border: `2px solid ${hot ? th.acc : rgba(th.ink, 0.22)}`,
-      borderRadius: 34,
-      boxShadow: hot ? `0 18px 60px ${rgba(th.acc, 0.35)}` : '0 18px 50px rgba(0,0,0,0.3)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -76,6 +116,57 @@ export const Card = ({children, hot, th, style}) => (
     {children}
   </div>
 );
+
+// شريحة الأيقونة: مربع مدوّر بتدرّج لون الباقة وفيه أيقونة ترسم نفسها، أو رقم
+export const Chip = ({icon, n, size, th, t, at, ghost = false}) => (
+  <div
+    style={{
+      width: size,
+      height: size,
+      borderRadius: size * 0.3,
+      flexShrink: 0,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: ghost ? rgba(th.ink, 0.1) : `linear-gradient(145deg, ${th.acc}, ${rgba(th.acc, 0.7)})`,
+      boxShadow: ghost ? 'none' : `inset 0 1.5px 0 ${rgba('#FFFFFF', 0.35)}, 0 10px 30px ${rgba(th.acc, 0.35)}`,
+      color: ghost ? th.ink : th.onAcc,
+      fontSize: size * 0.44,
+      fontWeight: 800,
+      direction: 'ltr',
+    }}
+  >
+    {icon ? <Icon name={icon} size={size * 0.56} color={ghost ? th.ink : th.onAcc} stroke={2.2} draw={prog(t, at + 0.08, 0.45)} /> : String(n).padStart(2, '0')}
+  </div>
+);
+
+// صورة حقيقية من مجلد الشغل (images/…): تنكشف من نصها وتتقرّب ببطء فما تتجمّد.
+// fit="logo" للشعار: يطلع كامل بدون قص على لوحة بيضا. pos="top" إذا المهم بأعلى الصورة (وجه، قمة برج)
+export const Photo = ({file, w, h, th, t, at, fit = 'cover', pos = 'center', radius = 36}) => {
+  const k = prog(t, at, 0.55);
+  const logo = fit === 'logo';
+  const zoom = 1.03 + 0.06 * clamp((t - at) / 6);
+  return (
+    <div
+      style={{
+        width: w,
+        height: h,
+        boxSizing: 'border-box',
+        flexShrink: 0,
+        borderRadius: radius,
+        overflow: 'hidden',
+        background: logo ? '#FFFFFF' : rgba(th.ink, 0.08),
+        border: `4px solid ${rgba(th.ink, 0.3)}`,
+        boxShadow: '0 24px 70px rgba(0,0,0,0.45)',
+        opacity: clamp(k * 3),
+        transform: `scale(${0.92 + 0.08 * k})`,
+        clipPath: `inset(${((1 - k) * 46).toFixed(2)}% 0 round ${radius}px)`,
+      }}
+    >
+      <Img src={staticFile(file)} style={{display: 'block', width: '100%', height: '100%', boxSizing: 'border-box', objectFit: logo ? 'contain' : 'cover', objectPosition: pos, padding: logo ? '9%' : 0, transform: logo ? 'none' : `scale(${zoom})`}} />
+    </div>
+  );
+};
 
 // أيقونات خطّية مرسومة على شبكة 24. كل أيقونة مسارات، فتقدر ترسم نفسها قدام العين (draw)
 export const ICONS = {

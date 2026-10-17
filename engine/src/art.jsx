@@ -178,12 +178,34 @@ const ArtCalendar = ({th, k}) => {
 export const ARTS = {shop: ArtShop, building: ArtBuilding, coins: ArtCoins, coin: ArtCoin, bills: ArtBills, doc: ArtDoc, person: ArtPerson, calendar: ArtCalendar};
 
 // k: اربطه بوقت الكلمة، مثلاً prog(t, scene.at, 0.9). الرسمة تنبني مرة وحدة ثم تثبت
-export const Art = ({name, size = 200, th, k = 1}) => {
+// الإضاءة: الرسمة تنرسم مرة بألوانها، ومرة ثانية بالأبيض كقناع، وفوقها تدرّج ضوء من فوق وظل من تحت.
+// فكل الرسومات تطلع مجسّمة ولامعة بدل ألوان مسطّحة، بدون ما ينعاد رسم وحدة منها. flat يطفّيها
+const WHITE = {bg: '#FFFFFF', ink: '#FFFFFF', acc: '#FFFFFF', onAcc: '#FFFFFF', soft: '#FFFFFF'};
+export const Art = ({name, size = 200, th, k = 1, flat = false}) => {
+  const id = React.useId().replace(/:/g, '');
   const A = ARTS[name];
   if (!A) return null;
   return (
     <svg width={size} height={size} viewBox="0 0 200 200" style={{display: 'block', flexShrink: 0, overflow: 'visible'}}>
-      <A th={th} k={clamp(k)} />
+      {flat ? null : (
+        <defs>
+          <linearGradient id={'l' + id} x1="0" y1="0" x2="0.35" y2="1">
+            <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.42" />
+            <stop offset="0.45" stopColor="#FFFFFF" stopOpacity="0.06" />
+            <stop offset="1" stopColor="#000000" stopOpacity="0.32" />
+          </linearGradient>
+          <mask id={'m' + id} maskUnits="userSpaceOnUse" x="-50" y="-50" width="300" height="300">
+            <A th={WHITE} k={clamp(k)} />
+          </mask>
+          <filter id={'s' + id} x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="10" stdDeviation="9" floodColor="#000000" floodOpacity="0.35" />
+          </filter>
+        </defs>
+      )}
+      <g filter={flat ? undefined : `url(#s${id})`}>
+        <A th={th} k={clamp(k)} />
+        {flat ? null : <rect x="-50" y="-50" width="300" height="300" fill={`url(#l${id})`} mask={`url(#m${id})`} />}
+      </g>
     </svg>
   );
 };

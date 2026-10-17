@@ -6,7 +6,7 @@ import {loadFont as loadAlmarai} from '@remotion/google-fonts/Almarai';
 import {resolveTheme} from './theme.js';
 import {clamp, lerp, ease, easeInOut, rgba} from './kit.jsx';
 import {ScenePanel} from './scenes.jsx';
-import {W, H, SPLIT_H, SFX, styleOf, layoutOf, captionStyle, resolveSounds, musicOf} from './plan.js';
+import {W, H, SPLIT_H, SFX, styleOf, layoutOf, captionStyle, resolveSounds, musicOf, resolvePlan} from './plan.js';
 
 const FONTS = {
   plex: () => loadPlex('normal', {weights: ['500', '700'], subsets: ['arabic', 'latin']}),
@@ -117,7 +117,57 @@ function Caption({page, next, t, th, y, hot, cs, scale = 1}) {
   );
 }
 
-export const Reel = ({meta, cut, face, sentences, plan}) => {
+// ——— الكاميرا ———
+// الرصد يتذبذب من لقطة للقطة، فلو لحقناه حرفياً الصورة تهتز. بدالها: كل مقطع بعد القص له وقفة ثابتة
+// (متوسط مكان الوجه)، وإذا مال المتحدث وطلع وجهه عن منطقة الأمان تتحرك الكاميرا له مرة وحدة بنعومة.
+const PAN = 0.9; // مدة حركة اللحاق بالثواني
+const med = (arr) => {
+  const x = arr.slice().sort((p, q) => p - q);
+  return x.length ? x[Math.floor(x.length / 2)] : NaN;
+};
+function planCamera(face, keep, meta) {
+  const track = (face?.track || []).filter((p) => Number.isFinite(p.cx));
+  if (!face?.found || track.length < 3) return null;
+  // عرض الجزء اللي يبان من التسجيل كنسبة من عرضه، والمنطقة الآمنة ربعه تقريباً
+  const visible = Math.min(1, W / Math.max(W / meta.width, H / meta.height) / meta.width);
+  const dead = Math.max(0.025, visible * 0.2);
+  return keep.map(([a, b]) => {
+    const pts = track.filter((p) => p.t >= a - 0.3 && p.t <= b + 0.3);
+    if (!pts.length) return {cy: face.cy, keys: [{t: a, cx: face.cx}]};
+    const around = (t0, t1) => med(pts.filter((p) => p.t >= t0 && p.t <= t1).map((p) => p.cx));
+    let cur = around(a - 0.3, a + 1.2);
+    if (!Number.isFinite(cur)) cur = pts[0].cx;
+    const keys = [{t: a, cx: cur}];
+    let busyTill = -Infinity;
+    for (const p of pts) {
+      if (p.t < busyTill) continue;
+      // نقيس على متوسط نص ثانية، مو على لقطة وحدة، فالرعشة ما تحرّك الكاميرا
+      const now = around(p.t - 0.25, p.t + 0.25);
+      if (Math.abs(now - cur) <= dead) continue;
+      const next = around(p.t, p.t + 1.2);
+      const target = Number.isFinite(next) ? next : now;
+      keys.push({t: p.t, cx: cur}, {t: p.t + PAN, cx: target});
+      cur = target;
+      busyTill = p.t + PAN + 0.6;
+    }
+    return {cy: med(pts.map((p) => p.cy)), keys};
+  });
+}
+function cameraAt(cam, seg, srcT, face) {
+  const c = cam?.[seg];
+  if (!c) return face;
+  const ks = c.keys;
+  let cx = ks[0].cx;
+  for (let i = 1; i < ks.length; i++) {
+    if (srcT <= ks[i - 1].t) break;
+    cx = srcT >= ks[i].t ? ks[i].cx : lerp(ks[i - 1].cx, ks[i].cx, easeInOut((srcT - ks[i - 1].t) / (ks[i].t - ks[i - 1].t)));
+  }
+  return {...face, cx, cy: Number.isFinite(c.cy) ? c.cy : face.cy};
+}
+
+export const Reel = ({meta, cut, face, sentences, plan: planIn}) => {
+  // أوقات الرسمات تنحسب من الكلام (word → at)، فتطلع مع الكلمة بالضبط
+  const plan = React.useMemo(() => resolvePlan(planIn, sentences, cut.total), [planIn, sentences, cut.total]);
   const frame = useCurrentFrame();
   const {fps, durationInFrames} = useVideoConfig();
   const t = frame / fps;
@@ -144,6 +194,9 @@ export const Reel = ({meta, cut, face, sentences, plan}) => {
     });
   }, [cut, fps, st, plan?.zoom]);
   const cur = segs.find((sg) => frame >= sg.from && frame < sg.from + sg.dur) || segs[segs.length - 1];
+  // الكاميرا: ثابتة على وجهه، وما تلحقه إلا إذا طلع عن منطقة الأمان، وتلحقه بحركة وحدة ناعمة
+  const cam = React.useMemo(() => planCamera(face, cut.keep, meta), [face, cut.keep, meta]);
+  const fc = cameraAt(cam, segs.indexOf(cur), (cur.trim + frame - cur.from) / fps, face);
 
   // الرسمة المالية للشاشة: الصورة وراها تتضبّب وتعتم. والمقسومة: المتحدث يطلع فوق والرسمة تحته
   let take = 0;
@@ -158,16 +211,16 @@ export const Reel = ({meta, cut, face, sentences, plan}) => {
   const hook = plan?.hookZoom === false || cur !== segs[0] ? 0 : 0.07 * ease(t / Math.max(1, segs[0].dur / fps));
   const zoom = (cur.zoom + hook) * (1 + 0.1 * take);
   const hv = lerp(H, SPLIT_H, split);
-  const p = place(meta, face, zoom, hv, lerp(0.4, 0.42, split));
+  const p = place(meta, fc, zoom, hv, lerp(0.4, 0.42, split));
 
   // الكتابة مكانها تحت الذقن، بعيد عن ملامحه. وقت القسمة تطلع لآخر صورته وتصغر، ووقت الرسمة الكاملة تنزل تحتها
-  const rest = cs.y != null ? cs.y * H : clamp(place(meta, face, 1.1).chin + 170, 1000, 1400);
+  const rest = cs.y != null ? cs.y * H : clamp(place(meta, fc, 1.1).chin + 170, 1000, 1400);
   const capY = lerp(lerp(rest, 1400, take), SPLIT_H - 120, split);
   const capScale = lerp(1, 0.8, split);
   const pi = pg.findIndex((x, i) => t >= x.s - 0.04 && (i === pg.length - 1 || t < pg[i + 1].s - 0.04));
 
   return (
-    <AbsoluteFill style={{background: split > 0.01 ? th.bg : '#000', fontFamily}}>
+    <AbsoluteFill style={{background: split > 0.01 ? `radial-gradient(120% 60% at 50% 100%, ${rgba(th.acc, 0.1)}, ${rgba(th.acc, 0)} 60%), ${th.bg}` : '#000', fontFamily}}>
       <div style={{position: 'absolute', left: 0, top: 0, width: W, height: hv, overflow: 'hidden', filter: take > 0.01 ? `blur(${(take * 28).toFixed(1)}px)` : 'none'}}>
         {segs.map((sg, i) => (
           // المقطع الجاي يتجهّز قبل وقته بثانية، فالقصّة تطلع نظيفة بالمعاينة بدون شاشة سودا
@@ -180,7 +233,13 @@ export const Reel = ({meta, cut, face, sentences, plan}) => {
           </Sequence>
         ))}
       </div>
-      {split > 0.01 ? <div style={{position: 'absolute', left: 0, top: hv - 3, width: W, height: 6, background: th.acc, opacity: split}} /> : null}
+      {split > 0.01 ? (
+        <>
+          {/* الصورة تذوب في اللوح اللي تحتها بدل خط حاد، وخط رفيع مضيء يفصل */}
+          <div style={{position: 'absolute', left: 0, top: hv - 220, width: W, height: 220, background: `linear-gradient(180deg, ${rgba(th.bg, 0)}, ${rgba(th.bg, 0.92)})`, opacity: split}} />
+          <div style={{position: 'absolute', left: W * 0.2, top: hv - 1, width: W * 0.6, height: 2, background: `linear-gradient(90deg, ${rgba(th.acc, 0)}, ${th.acc}, ${rgba(th.acc, 0)})`, boxShadow: `0 0 24px ${rgba(th.acc, 0.8)}`, opacity: split}} />
+        </>
+      ) : null}
       {take > 0.01 ? <AbsoluteFill style={{background: rgba(th.bg, 0.82 * take)}} /> : null}
       {scenes.map((sc, i) => (t >= sc.s && t <= sc.e ? <ScenePanel key={i} scene={sc} t={t} th={th} shiftY={layoutOf(sc) === 'split' ? hv - SPLIT_H : 0} /> : null))}
       <Caption page={pg[pi]} next={pg[pi + 1]} t={t} th={th} y={capY} hot={hot} cs={cs} scale={capScale} />

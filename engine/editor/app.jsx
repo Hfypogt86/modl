@@ -5,7 +5,7 @@ import {Player} from '@remotion/player';
 import {Reel} from '../src/Reel.jsx';
 import {PALETTES, resolveTheme} from '../src/theme.js';
 import {ICONS, ARTS} from '../src/kit.jsx';
-import {STYLES, SFX, H, layoutOf, captionStyle, resolveSounds, validatePlan, applyFix, retimeProject, keepTotal, toSource} from '../src/plan.js';
+import {STYLES, SFX, H, layoutOf, captionStyle, resolveSounds, validatePlan, applyFix, retimeProject, keepTotal, toSource, resolvePlan} from '../src/plan.js';
 
 const FPS = 30;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -21,6 +21,8 @@ const api = (url, opt = {}) =>
   });
 
 // ——— أدوات صغيرة ———
+// نسخة بدون ربط بالكلام: العنصر المنسوخ ياخذ وقته من الأرقام
+const unanchor = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([k]) => k !== 'word' && !/Word$/.test(k))) : v);
 const isTime = (k) => k === 'at' || /At$/.test(k || '');
 // يزحّف كل وقت داخل الرسمة بنفس المقدار، فعناصرها تمشي معها
 const shift = (v, k, d) => {
@@ -30,9 +32,9 @@ const shift = (v, k, d) => {
   return v;
 };
 
-const KEY_LABELS = {text: 'النص', at: 'الوقت', note: 'تعليق', noteAt: 'وقت التعليق', title: 'العنوان', label: 'العنوان', labelAt: 'وقت العنوان', sub: 'سطر تحتي', subAt: 'وقت السطر', items: 'العناصر', hot: 'ملوّن', before: 'قبل', after: 'بعد', tag: 'البطاقة', steps: 'الخطوات', n: 'الرقم', icon: 'أيقونة', art: 'رسمة موشن', amount: 'المبلغ', total: 'المجموع', totalAt: 'وقت المجموع', totalLabel: 'اسم المجموع', right: 'الجهة اليمين', left: 'الجهة اليسار', mark: 'العلامة', value: 'الرقم', unit: 'الوحدة'};
+const KEY_LABELS = {text: 'النص', at: 'الوقت', note: 'تعليق', noteAt: 'وقت التعليق', title: 'العنوان', label: 'العنوان', labelAt: 'وقت العنوان', sub: 'سطر تحتي', subAt: 'وقت السطر', items: 'العناصر', hot: 'ملوّن', before: 'قبل', after: 'بعد', tag: 'البطاقة', steps: 'الخطوات', n: 'الرقم', icon: 'أيقونة', art: 'رسمة موشن', amount: 'المبلغ', total: 'المجموع', totalAt: 'وقت المجموع', totalLabel: 'اسم المجموع', right: 'الجهة اليمين', left: 'الجهة اليسار', mark: 'العلامة', value: 'الرقم', unit: 'الوحدة', file: 'ملف الصورة', fit: 'شكل الصورة', pos: 'مكان القص', titleAt: 'وقت العنوان', word: 'يطلع مع كلمة', totalWord: 'المجموع مع كلمة', noteWord: 'التعليق مع كلمة', labelWord: 'العنوان مع كلمة', titleWord: 'العنوان مع كلمة', nth: 'رقم تكرار الكلمة'};
 const ART_LABELS = {shop: 'محل', building: 'عمارة', coins: 'عملات تتكدّس', coin: 'عملة', bills: 'ورق نقد', doc: 'ورقة رسمية', person: 'شخص', calendar: 'روزنامة'};
-const TYPE_LABELS = {list: 'قائمة', numbers: 'أرقام', flow: 'تحويل', word: 'عبارة', total: 'تكاليف', compare: 'مقارنة', stat: 'رقم كبير', custom: 'رسمة خاصة'};
+const TYPE_LABELS = {list: 'قائمة', numbers: 'أرقام', flow: 'تحويل', word: 'عبارة', total: 'تكاليف', compare: 'مقارنة', stat: 'رقم كبير', photo: 'صورة', custom: 'رسمة خاصة'};
 const sceneTitle = (sc) => (sc.type === 'custom' ? sc.name : TYPE_LABELS[sc.type]) + (sc.title || sc.text || sc.label || sc.value ? ' · ' + (sc.title || sc.text || sc.label || sc.value) : '');
 
 const newScene = (type, t) => {
@@ -145,7 +147,13 @@ function Fields({value, onChange, skip = []}) {
     .filter(([k]) => !skip.includes(k))
     .map(([k, v]) => {
       const label = KEY_LABELS[k] || k;
-      const put = (nv) => onChange({...value, [k]: nv});
+      // تعديل الوقت باليد يفك ربطه بالكلمة (word → at)، وإلا يرجع لوقت الكلمة
+      const anchor = k === 'at' ? 'word' : isTime(k) ? k.replace(/At$/, 'Word') : null;
+      const put = (nv) => {
+        const next = {...value, [k]: nv};
+        if (anchor && anchor in next) delete next[anchor];
+        onChange(next);
+      };
       if (k === 'icon' || k === 'art' || k === 'mark') {
         const opts = k === 'icon' ? Object.keys(ICONS).map((x) => [x, x]) : k === 'art' ? Object.entries(ART_LABELS) : [['check', 'صح'], ['cross', 'خطأ']];
         return (
@@ -211,7 +219,7 @@ function Fields({value, onChange, skip = []}) {
                 <Fields value={it} onChange={(nv) => put(v.map((y, j) => (j === i ? nv : y)))} />
               </div>
             ))}
-            <button onClick={() => put([...v, shift(v[v.length - 1], '', 0.8)])}>＋ عنصر</button>
+            <button onClick={() => put([...v, unanchor(shift(v[v.length - 1], '', 0.8))])}>＋ عنصر</button>
           </div>
         );
       return null;
@@ -818,14 +826,21 @@ function Timeline({doc, set, sentences, total, t, seek, sel, setSel, pps}) {
   );
 }
 
+// يحسب s و e للرسمات اللي ناقصتها من الكلام، ويخلي باقي الخطة زي ما هي
+function materialize(plan, sentences) {
+  const r = resolvePlan(plan || {}, sentences);
+  return {...(plan || {}), scenes: (plan?.scenes || []).map((sc, i) => ({...sc, s: sc.s ?? r.scenes[i].s, e: sc.e ?? r.scenes[i].e}))};
+}
+
 // ——— التطبيق ———
 function Editor({project}) {
-  const {doc, set, undo, redo, canUndo, canRedo} = useHistory({plan: project.plan, fix: project.fix, cut: project.cut, raw: project.raw});
+  // الرسمات المربوطة بالكلام تاخذ s و e من أول ما تنفتح، عشان التايم لاين يرسمها
+  const {doc, set, undo, redo, canUndo, canRedo} = useHistory({plan: materialize(project.plan, applyFix(project.raw.sentences, project.fix)), fix: project.fix, cut: project.cut, raw: project.raw});
   const {plan, fix, cut, raw} = doc;
   const total = keepTotal(cut.keep);
   const frames = Math.max(1, Math.round(total * FPS));
   const sentences = useMemo(() => applyFix(raw.sentences, fix), [raw, fix]);
-  const problems = useMemo(() => validatePlan(plan, total), [plan, total]);
+  const problems = useMemo(() => validatePlan(resolvePlan(plan, sentences, total), total), [plan, sentences, total]);
   const setPlan = useCallback((fn, tag) => set((d) => ({...d, plan: typeof fn === 'function' ? fn(d.plan) : fn}), tag), [set]);
 
   const player = useRef(null);

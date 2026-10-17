@@ -69,12 +69,14 @@ export const scenes = {openShop: OpenShop};
 وتستدعيها من `plan.json`:
 
 ```json
-{"type": "custom", "name": "openShop", "layout": "split", "s": 12.0, "e": 16.0,
- "shopAt": 12.4, "costAt": 13.6, "cost": 80, "unit": "ألف",
- "sfx": [{"at": 12.0, "name": "whoosh"}, {"at": 13.6, "name": "pop"}]}
+{"type": "custom", "name": "openShop", "layout": "split",
+ "shopWord": "محل", "costWord": "80", "cost": 80, "unit": "ألف",
+ "sfx": [{"word": "محل", "name": "whoosh"}, {"word": "80", "name": "pop"}]}
 ```
 
-`name` لازم يساوي المفتاح اللي بـ`scenes`. وأي حقل زيادة تكتبه هنا (زي `shopAt`) يوصل الرسمة داخل `scene`. خلّ الأوقات والنصوص والأرقام بهالملف والكود للحركة فقط، فإذا تغيّر وقت كلمة تعدّل رقم وما تفتح الكود، والمستخدم يقدر يعدّلها من المحرّر.
+`shopWord` و`costWord` يتحوّلون لـ`shopAt` و`costAt` من لحظة نطق الكلمة، والرسمة تقراهم كذا (`scene.shopAt`). وبدون `s` و`e` الرسمة تنفتح وتتسكّر مع كلماتها. والأصوات نفسها تنربط بالكلمة. والأمر 4 يطبع سطر 🎬 فيه وقت كل حقل بعد ما انحسب.
+
+`name` لازم يساوي المفتاح اللي بـ`scenes`. وأي حقل زيادة تكتبه هنا (زي `cost`) يوصل الرسمة داخل `scene`. خلّ الأوقات والنصوص والأرقام بهالملف والكود للحركة فقط، فإذا تغيّر وقت كلمة تعدّل رقم وما تفتح الكود، والمستخدم يقدر يعدّلها من المحرّر.
 
 سطر الاستيراد من `./kit.jsx` لا تغيّر مساره: وقت التصدير الملف ينتقل لجوّا المحرّك وهناك يلقى `kit.jsx` جنبه.
 
@@ -107,6 +109,7 @@ export const scenes = {openShop: OpenShop};
 
 - `Art`: رسمة موشن ملوّنة تنبني مع `k`. `<Art name="shop" size={300} th={th} k={prog(t, at, 1)} />`. الأسماء: `shop` `building` `coins` `coin` `bills` `doc` `person` `calendar`.
 - `Icon`: أيقونة خطّية ترسم نفسها مع `draw`. `<Icon name="key" size={120} color={th.acc} draw={prog(t, at, 0.5)} />`. الأسماء بـ`templates.md`.
+- `Photo`: صورة حقيقية من `images/` بمجلد الشغل، تنكشف من نصها وتتقرّب ببطء. `<Photo file={scene.file} w={420} h={420} th={th} t={t} at={scene.photoAt} />`. و`fit="logo"` للشعار، و`pos="top"` إذا المهم بأعلى الصورة. متى تجيب صورة وكيف تنزّلها: قسم «الصور الحقيقية» بـ`SKILL.md`.
 - `Card`: بطاقة لها عمق وظل، و`hot` يلوّنها.
 - `rgba(hex, alpha)`: لون من الباقة بشفافية.
 

@@ -95,14 +95,14 @@ const total = keep.reduce((s, k) => s + (k[1] - k[0]), 0);
 writeJson(path.join(WORK, 'cut.json'), {keep: keep.map((k) => [r3(k[0]), r3(k[1])]), total: r3(total), source: r3(info.duration)});
 console.log(`الوقفات: انقصّ ${(info.duration - total).toFixed(1)} ثانية والباقي ${total.toFixed(1)} ثانية على ${keep.length} مقطع`);
 
-// 5) الوجه — لقطة كل نص ثانية (نسخة ffmpeg حقت ريموشن خفيفة: ما فيها فلتر fps ولا مخرج rawvideo، فنستخدم -r و image2pipe)
+// 5) الوجه — لقطة كل ربع ثانية (نسخة ffmpeg حقت ريموشن خفيفة: ما فيها فلتر fps ولا مخرج rawvideo، فنستخدم -r و image2pipe)
 const FW = 320;
 const FH = 240;
 let face = {found: false};
 try {
   const ort = await import('onnxruntime-node');
   const session = await ort.InferenceSession.create(path.join(ENGINE, 'models', 'face.onnx'), {logSeverityLevel: 3});
-  const r = ff('ffmpeg', ['-v', 'error', '-i', srcCopy, '-vf', `scale=${FW}:${FH}`, '-r', '2', '-pix_fmt', 'rgb24', '-c:v', 'rawvideo', '-f', 'image2pipe', '-'], {binary: true});
+  const r = ff('ffmpeg', ['-v', 'error', '-i', srcCopy, '-vf', `scale=${FW}:${FH}`, '-r', '4', '-pix_fmt', 'rgb24', '-c:v', 'rawvideo', '-f', 'image2pipe', '-'], {binary: true});
   const buf = r.stdout;
   const n = Math.floor(buf.length / (FW * FH * 3));
   const boxes = [];
@@ -128,7 +128,7 @@ try {
         best = i;
       }
     }
-    if (best >= 0) boxes.push({t: k / 2, x0: bx[best * 4], y0: bx[best * 4 + 1], x1: bx[best * 4 + 2], y1: bx[best * 4 + 3]});
+    if (best >= 0) boxes.push({t: k / 4, x0: bx[best * 4], y0: bx[best * 4 + 1], x1: bx[best * 4 + 2], y1: bx[best * 4 + 3]});
   }
   if (boxes.length >= Math.max(2, n * 0.3)) {
     const med = (arr) => arr.slice().sort((a, b) => a - b)[Math.floor(arr.length / 2)];
@@ -149,6 +149,8 @@ try {
       bottom: r3(ye[Math.floor(ye.length * 0.95)]),
       samples: boxes.length,
       of: n,
+      // مكان الوجه لحظة بلحظة: الكاميرا تلحقه إذا مال، بدون ما تهتز مع رعشة الرصد
+      track: boxes.map((b) => ({t: b.t, cx: r3((b.x0 + b.x1) / 2), cy: r3((b.y0 + b.y1) / 2)})),
     };
   }
 } catch (e) {

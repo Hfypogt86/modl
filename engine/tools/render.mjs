@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {ff, readJson, syncCustom, ENGINE} from './lib.mjs';
 import {writeSfx} from './sfx.mjs';
-import {validatePlan, advisePlan} from '../src/plan.js';
+import {validatePlan, advisePlan, resolvePlan} from '../src/plan.js';
 
 const WORK = path.resolve(process.argv[2] || '.');
 const MODE = process.argv[3] || 'final';
@@ -19,7 +19,8 @@ const plan = readJson(path.join(WORK, 'plan.json'), {});
 const inputProps = {meta, cut, face, sentences: caps.sentences, plan};
 
 // فحص الخطة قبل الرندر — غلط بالتوقيت أرخص نكتشفه هنا. --force للمحرّر: صاحب المقطع شاف التنبيهات وقرر
-const problems = validatePlan(plan, cut.total);
+const resolved = resolvePlan(plan, caps.sentences, cut.total);
+const problems = validatePlan(resolved, cut.total);
 if (problems.length && !process.argv.includes('--force')) {
   console.error('❌ plan.json فيه مشاكل:\n' + problems.join('\n'));
   process.exit(4);
@@ -29,7 +30,29 @@ if (plan.music?.file && !fs.existsSync(path.join(WORK, plan.music.file))) {
   process.exit(4);
 }
 
-for (const note of advisePlan(plan, cut.total)) console.log('⚠️ ' + note);
+// أي صورة تذكرها الخطة (images/…) لازم تكون بمجلد الشغل، وإلا الرندر يوقف بنصه
+const missing = new Set();
+JSON.stringify(plan.scenes || [], (k, v) => {
+  if (typeof v === 'string' && v.startsWith('images/') && !fs.existsSync(path.join(WORK, v))) missing.add(v);
+  return v;
+});
+if (missing.size) {
+  console.error('❌ صور مو موجودة بمجلد الشغل: ' + [...missing].join(' · '));
+  process.exit(4);
+}
+
+for (const note of advisePlan(resolved, cut.total)) console.log('⚠️ ' + note);
+
+// توقيت كل رسمة بعد ما انحسب من الكلام، عشان تتأكد إن كل عنصر طالع مع كلمته
+(resolved.scenes || []).forEach((sc, i) => {
+  const ats = [];
+  JSON.stringify(sc, (k, v) => {
+    if ((k === 'at' || /At$/.test(k)) && typeof v === 'number') ats.push(v.toFixed(2));
+    if (k === 'at' && Array.isArray(v)) ats.push(...v.map((x) => x.toFixed(2)));
+    return v;
+  });
+  console.log(`🎬 ${i + 1} ${sc.type}${sc.name ? ':' + sc.name : ''} [${sc.s?.toFixed?.(2)}–${sc.e?.toFixed?.(2)}] ${ats.join(' · ')}`);
+});
 
 syncCustom(WORK);
 writeSfx(WORK);
@@ -45,7 +68,7 @@ if (MODE === 'preview') {
   let times = process.argv.slice(4).filter((x) => !x.startsWith('--')).map(Number).filter((n) => Number.isFinite(n));
   if (!times.length) {
     // ما انحددت ثواني: ناخذ وسط كل رسمة ونكمّل الباقي على طول المقطع
-    times = (plan.scenes || []).map((s) => (s.s + s.e) / 2 + 0.3);
+    times = (resolved.scenes || []).map((s) => (s.s + s.e) / 2 + 0.3);
     for (let i = 0; times.length < 6; i++) times.push((total * (i + 0.5)) / 6);
     times = times.slice(0, 6).sort((a, b) => a - b);
   }
