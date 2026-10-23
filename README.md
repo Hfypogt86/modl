@@ -4,7 +4,7 @@
 
 ## التنصيب
 
-افتح Claude واكتب له:
+افتح Claude code واكتب له:
 
 ```
 نصّب لي هالمهارة https://github.com/ahmedflow/reels-editor
